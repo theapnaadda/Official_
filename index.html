@@ -314,7 +314,7 @@
             border-radius: 50%;
         }
 
-        /* Notifications */
+        /* Notifications & Modal */
         .notif-backdrop {
             position: fixed;
             top: 0;
@@ -340,42 +340,79 @@
             border: 1px solid #333;
             border-radius: 12px;
             width: 90%;
-            max-width: 400px;
+            max-width: 450px;
+            max-height: 80vh; /* Fixed height for scroll */
             box-shadow: 0 10px 40px rgba(0,0,0,0.8);
             transform: scale(0.9);
             transition: transform 0.3s ease;
-            overflow: hidden;
+            overflow: hidden; /* Hide outer overflow */
             position: relative;
+            display: flex;
+            flex-direction: column;
         }
         .notif-backdrop.open .notif-box {
             transform: scale(1);
         }
-        .notif-close {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0,0,0,0.6);
-            color: white;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
+        .notif-header {
+            padding: 15px;
+            border-bottom: 1px solid #333;
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            justify-content: center;
+            background: #222;
+        }
+        .notif-close {
             cursor: pointer;
-            z-index: 10;
-            font-size: 14px;
+            color: #aaa;
+            font-size: 1.2rem;
+            transition: color 0.3s;
         }
         .notif-close:hover {
-            background: var(--primary-red);
+            color: white;
         }
-        .notif-img-display {
+        
+        /* New Scrollable List Styles */
+        #notificationList {
+            overflow-y: auto;
+            flex: 1;
+            padding: 0;
+        }
+        .notif-item {
+            border-bottom: 1px solid #333;
+            padding: 20px;
+            background: #1a1a1a;
+            transition: background 0.2s;
+        }
+        .notif-item:last-child {
+            border-bottom: none;
+        }
+        .notif-item:hover {
+            background: #222;
+        }
+        .notif-list-img {
             width: 100%;
+            height: auto;
             max-height: 250px;
-            object-fit: contain; 
-            display: block;
-            background-color: #000;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border: 1px solid #333;
         }
+        .notif-text-content {
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: #ddd;
+            white-space: pre-wrap; /* Keeps line breaks */
+        }
+        .notif-date {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 10px;
+            text-align: right;
+            font-weight: bold;
+        }
+
+        /* Nav Dots */
         .nav-notif-btn {
             position: relative;
             cursor: pointer;
@@ -463,14 +500,19 @@
         </div>
     </nav>
 
-    <!-- NOTIFICATION MODAL OVERLAY (USER VIEW) -->
+    <!-- UPDATED NOTIFICATION MODAL (VERTICAL LIST) -->
     <div id="notificationModal" class="notif-backdrop" onclick="closeNotificationModal(event)">
         <div class="notif-box" onclick="event.stopPropagation()">
-            <div class="notif-close" onclick="closeNotificationModal(event)"><i class="fas fa-times"></i></div>
+            <!-- Modal Header -->
+            <div class="notif-header">
+                <h3 class="text-white font-bold text-lg"><i class="fas fa-bell text-red-600 mr-2"></i> Notifications</h3>
+                <div class="notif-close" onclick="closeNotificationModal(event)"><i class="fas fa-times"></i></div>
+            </div>
             
-            <!-- Dynamic Content -->
-            <div id="notifContentImage"></div>
-            <div id="notifContentText" class="p-6 text-center text-gray-200"></div>
+            <!-- Dynamic Scrollable List -->
+            <div id="notificationList">
+                <!-- Content injected via JS -->
+            </div>
         </div>
     </div>
 
@@ -788,7 +830,7 @@
                             <button type="submit" id="notifSubmitBtn" class="flex-1 bg-white text-black font-bold py-2 rounded hover:bg-gray-200 text-sm">SEND</button>
                             <button type="button" onclick="resetNotifForm()" class="px-3 border border-gray-600 rounded text-white text-sm">Reset</button>
                         </div>
-                        <p class="text-[10px] text-gray-500">Will trigger a red dot. Users see the latest alert.</p>
+                        <p class="text-[10px] text-gray-500">Will trigger a red dot. Users see list sorted by date.</p>
                     </form>
 
                     <!-- History List -->
@@ -908,7 +950,6 @@
         let countdownInterval = null;
         let currentUserEmail = null;
         let currentAdminChatUser = null;
-        let currentNotification = null; 
         const sections = ['home', 'apps', 'about', 'contact', 'login', 'admin', 'profile', 'privacy', 'disclaimer'];
 
         // 3. INIT & NAVIGATION
@@ -951,10 +992,8 @@
             if (!isActive) { btn.classList.add('active'); content.style.maxHeight = content.scrollHeight + "px"; }
         }
 
-        // --- IMAGE COMPRESSOR & BASE64 CONVERTER ---
-        // This function auto-resizes and compresses images to be under ~1MB
+        // --- IMAGE COMPRESSOR ---
         const compressAndConvertToBase64 = async (file) => {
-            // 1. If file is small (< 1MB), just standard conversion
             if (file.size < 1024 * 1024) {
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader();
@@ -963,8 +1002,6 @@
                     reader.readAsDataURL(file);
                 });
             }
-
-            // 2. If larger, we compress
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
@@ -975,8 +1012,6 @@
                         const canvas = document.createElement('canvas');
                         let width = img.width;
                         let height = img.height;
-                        
-                        // Resize logic: Max dimension 1280px (Good balance for web)
                         const MAX_DIMENSION = 1280; 
                         if (width > height) {
                             if (width > MAX_DIMENSION) {
@@ -989,22 +1024,16 @@
                                 height = MAX_DIMENSION;
                             }
                         }
-
                         canvas.width = width;
                         canvas.height = height;
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
-
-                        // Compress loop: Reduce quality until < 1MB
-                        // Note: toDataURL header adds size, so we target ~900KB
                         let quality = 0.9;
                         let base64 = canvas.toDataURL('image/jpeg', quality);
-
                         while (base64.length * 0.75 > 900 * 1024 && quality > 0.1) {
                             quality -= 0.1;
                             base64 = canvas.toDataURL('image/jpeg', quality);
                         }
-                        
                         resolve(base64);
                     };
                     img.onerror = (err) => reject(err);
@@ -1016,7 +1045,6 @@
         // ============================================
         // APP LOGIC
         // ============================================
-
         function fetchApps() { 
             const loader = document.getElementById('homeLoader');
             if(loader) loader.style.display = 'block';
@@ -1097,31 +1125,20 @@
             updateTimers(); countdownInterval = setInterval(updateTimers, 1000);
         }
 
-        // --- FIXED APP SUBMIT LOGIC (AUTO COMPRESS) ---
         async function handleAppSubmit(e) {
             e.preventDefault();
             const id = document.getElementById('editAppId').value;
             const f = document.getElementById('appImage').files[0];
             const btn = document.getElementById('submitBtn');
             const originalText = btn.innerText;
-
             let imageBase64 = '';
-            
             if (f) {
                 btn.innerText = "Compressing...";
-                try {
-                    // Auto compress > 1MB images
-                    imageBase64 = await compressAndConvertToBase64(f);
-                } catch(err) {
-                    showToast('Error processing image', 'error');
-                    btn.innerText = originalText;
-                    return;
-                }
+                try { imageBase64 = await compressAndConvertToBase64(f); } catch(err) { showToast('Error processing image', 'error'); btn.innerText = originalText; return; }
             } else if (id) {
                 const o = allApps.find(x => x.id === id); 
                 if (o) imageBase64 = o.image;
             }
-
             const statusType = document.getElementById('launchStatus').value;
             let detail = '';
             if (statusType.includes('date')) detail = document.getElementById('statusDate').value;
@@ -1130,32 +1147,10 @@
             else if (statusType.includes('hours')) { const h = parseFloat(document.getElementById('statusHours').value); if (!isNaN(h)) { detail = new Date(Date.now() + h * 60 * 60 * 1000).toISOString(); } }
             else if (statusType.includes('countdown')) detail = document.getElementById('statusCountdown').value;
 
-            const p = { 
-                name: document.getElementById('appName').value, 
-                status: statusType, 
-                statusDetail: detail, 
-                link: document.getElementById('appLink').value, 
-                image: imageBase64 || '' 
-            };
-
+            const p = { name: document.getElementById('appName').value, status: statusType, statusDetail: detail, link: document.getElementById('appLink').value, image: imageBase64 || '' };
             btn.innerText = "SAVING...";
-            
             const promise = id ? db.ref('apps/' + id).update(p) : db.ref('apps').push(p);
-            
-            promise.then(() => {
-                showToast(id ? 'App updated!' : 'App added!', 'success');
-                resetForm();
-            }).catch((error) => {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Save Failed',
-                    text: error.message,
-                    background: '#1a1a1a',
-                    color: '#fff'
-                });
-            }).finally(() => {
-                btn.innerText = originalText;
-            });
+            promise.then(() => { showToast(id ? 'App updated!' : 'App added!', 'success'); resetForm(); }).catch((error) => { Swal.fire({ icon: 'error', title: 'Save Failed', text: error.message, background: '#1a1a1a', color: '#fff' }); }).finally(() => { btn.innerText = originalText; });
         }
         
         function toggleStatusFields() {
@@ -1171,41 +1166,73 @@
         function editApp(id) { const a = allApps.find(x => x.id === id); if (!a) return; document.getElementById('editAppId').value = a.id; document.getElementById('appName').value = a.name; document.getElementById('launchStatus').value = a.status; document.getElementById('appLink').value = a.link || ''; toggleStatusFields(); if (a.status.includes('date')) document.getElementById('statusDate').value = a.statusDetail; if (a.status.includes('weeks')) document.getElementById('statusWeeks').value = a.statusDetail; if (a.status.includes('months')) document.getElementById('statusMonths').value = a.statusDetail; if (a.status.includes('hours')) { const remainingHours = (new Date(a.statusDetail).getTime() - new Date().getTime()) / (1000 * 60 * 60); document.getElementById('statusHours').value = remainingHours > 0 ? remainingHours.toFixed(2) : 0; } if (a.status.includes('countdown')) document.getElementById('statusCountdown').value = a.statusDetail; showToast('Editing: ' + a.name, 'info'); }
         function resetForm(){ document.getElementById('appForm').reset(); document.getElementById('editAppId').value=''; toggleStatusFields(); }
 
-        // --- SLIDESHOW LOGIC (AUTO COMPRESS) ---
+        // --- SLIDESHOW LOGIC ---
         function fetchSlides() { db.ref('slides').on('value', s => { allSlides=[]; const d=s.val(); if(d)Object.keys(d).forEach(k=>allSlides.push({id:k,image:d[k].image})); const c=document.getElementById('heroSlideshow'); c.innerHTML=''; const l=document.getElementById('adminSlidesList'); l.innerHTML=''; allSlides.forEach((x,i)=>{ const m=document.createElement('img'); m.src=x.image; m.className='slide-image'+(i===0?' active':''); c.appendChild(m); l.innerHTML+=`<div class="flex justify-between bg-black p-2 border border-gray-700 mb-1"><img src="${x.image}" class="h-6 w-10 rounded"><button onclick="deleteSlide('${x.id}')" class="text-red-500 text-xs">DEL</button></div>`; }); if(slideInterval)clearInterval(slideInterval); let idx=0; const im=document.querySelectorAll('.slide-image'); slideInterval=setInterval(()=>{if(im.length){im[idx].classList.remove('active');idx=(idx+1)%im.length;im[idx].classList.add('active');}},5000); }); }
-        
-        async function uploadSlide(){
-            const f=document.getElementById('slideUploadInput').files[0]; 
-            const btn = document.getElementById('slideUploadBtn');
-            
-            if(f){
-                btn.innerText = "Processing...";
-                try {
-                    // Auto compress here too
-                    const base64 = await compressAndConvertToBase64(f);
-                    db.ref('slides').push({image: base64});
-                    showToast('Slide uploaded successfully!');
-                    document.getElementById('slideUploadInput').value = '';
-                } catch(e) { 
-                    showToast('Slide upload failed', 'error'); 
-                }
-                btn.innerText = "Upload";
-            }
-        }
+        async function uploadSlide(){ const f=document.getElementById('slideUploadInput').files[0]; const btn = document.getElementById('slideUploadBtn'); if(f){ btn.innerText = "Processing..."; try { const base64 = await compressAndConvertToBase64(f); db.ref('slides').push({image: base64}); showToast('Slide uploaded successfully!'); document.getElementById('slideUploadInput').value = ''; } catch(e) { showToast('Slide upload failed', 'error'); } btn.innerText = "Upload"; } }
         function deleteSlide(id) { showConfirm('Delete Slide?', 'Remove from slideshow?').then((result) => { if (result.isConfirmed) { db.ref('slides/' + id).remove(); showToast('Slide deleted', 'info'); } }); }
 
-        // --- NOTIFICATION LOGIC (AUTO COMPRESS) ---
+        // --- UPDATED NOTIFICATION LOGIC (VERTICAL SCROLL) ---
         function initNotifications() {
             db.ref('system_notifications').limitToLast(20).on('value', (snapshot) => {
-                const data = snapshot.val(); allNotifications = [];
-                if (data) { Object.keys(data).forEach(key => allNotifications.push({ id: key, ...data[key] })); allNotifications.sort((a, b) => b.timestamp - a.timestamp); if (allNotifications.length > 0) { currentNotification = allNotifications[0]; checkIfSeen(currentNotification.timestamp); } else { currentNotification = null; hideRedDots(); } } else { currentNotification = null; hideRedDots(); }
+                const data = snapshot.val();
+                allNotifications = [];
+                if (data) {
+                    Object.keys(data).forEach(key => allNotifications.push({ id: key, ...data[key] }));
+                    // Sort Newest First
+                    allNotifications.sort((a, b) => b.timestamp - a.timestamp);
+                    // Check red dot based on latest
+                    if(allNotifications.length > 0) checkIfSeen(allNotifications[0].timestamp);
+                    else hideRedDots();
+                } else {
+                    hideRedDots();
+                }
                 renderAdminNotifications();
             });
         }
-        function checkIfSeen(timestamp) { const lastSeenTime = localStorage.getItem('apnaAddaLastNotifTime'); if (!lastSeenTime || parseInt(lastSeenTime) < timestamp) { showRedDots(); } else { hideRedDots(); } }
+
+        function checkIfSeen(timestamp) { 
+            const lastSeenTime = localStorage.getItem('apnaAddaLastNotifTime'); 
+            if (!lastSeenTime || parseInt(lastSeenTime) < timestamp) showRedDots();
+            else hideRedDots();
+        }
         function showRedDots() { document.getElementById('desktopNotifDot').classList.remove('hidden'); document.getElementById('mobileNotifDot').classList.remove('hidden'); }
         function hideRedDots() { document.getElementById('desktopNotifDot').classList.add('hidden'); document.getElementById('mobileNotifDot').classList.add('hidden'); }
-        function openNotificationModal() { if (!currentNotification) { Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: 'No new notifications', showConfirmButton: false, timer: 2000, background: '#1a1a1a', color: '#fff' }); return; } const imgContainer = document.getElementById('notifContentImage'); const textContainer = document.getElementById('notifContentText'); imgContainer.innerHTML = ''; textContainer.innerHTML = ''; if (currentNotification.image) { imgContainer.innerHTML = `<img src="${currentNotification.image}" class="notif-img-display">`; } if (currentNotification.text) { textContainer.innerText = currentNotification.text; textContainer.style.display = 'block'; } else { textContainer.style.display = 'none'; } document.getElementById('notificationModal').classList.add('open'); localStorage.setItem('apnaAddaLastNotifTime', currentNotification.timestamp); hideRedDots(); }
+        
+        // Open Modal and Render Vertical List
+        function openNotificationModal() { 
+            const list = document.getElementById('notificationList');
+            list.innerHTML = '';
+
+            if (!allNotifications || allNotifications.length === 0) { 
+                list.innerHTML = '<div class="p-8 text-center text-gray-500">No notifications yet.</div>';
+                document.getElementById('notificationModal').classList.add('open');
+                return; 
+            }
+
+            allNotifications.forEach(notif => {
+                const dateStr = new Date(notif.timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+                const imgHtml = notif.image ? `<img src="${notif.image}" class="notif-list-img">` : '';
+                const textHtml = notif.text ? `<p class="notif-text-content">${notif.text}</p>` : '';
+
+                const itemHtml = `
+                    <div class="notif-item">
+                        ${imgHtml}
+                        ${textHtml}
+                        <div class="notif-date">${dateStr}</div>
+                    </div>
+                `;
+                list.innerHTML += itemHtml;
+            });
+
+            // Mark as seen based on the newest item
+            if(allNotifications.length > 0) {
+                localStorage.setItem('apnaAddaLastNotifTime', allNotifications[0].timestamp);
+            }
+            
+            document.getElementById('notificationModal').classList.add('open'); 
+            hideRedDots(); 
+        }
+
         function closeNotificationModal(e) { document.getElementById('notificationModal').classList.remove('open'); }
         
         async function handleNotificationSubmit(e) {
@@ -1215,52 +1242,24 @@
             const file = document.getElementById('notifImage').files[0];
             const btn = document.getElementById('notifSubmitBtn');
             const originalText = btn.innerText;
-
             if (!text && !file && !id) { showToast('Please add text or an image.', 'warning'); return; }
-
             let imgUrl = '';
-            // Retain existing image if editing and no new file selected
-            if (id && !file) { 
-                const existing = allNotifications.find(n => n.id === id); 
-                if(existing) imgUrl = existing.image || ''; 
-            }
-
+            if (id && !file) { const existing = allNotifications.find(n => n.id === id); if(existing) imgUrl = existing.image || ''; }
             if (file) {
                 btn.innerText = "Compressing...";
-                try { imgUrl = await compressAndConvertToBase64(file); } 
-                catch (err) { showToast('Image processing failed', 'error'); btn.innerText = originalText; return; }
+                try { imgUrl = await compressAndConvertToBase64(file); } catch (err) { showToast('Image processing failed', 'error'); btn.innerText = originalText; return; }
             }
-
             const payload = { text: text, image: imgUrl, timestamp: Date.now() };
             btn.innerText = "SENDING...";
-
             let promise;
-
             if (id) {
                 const result = await showConfirm('Update Notification?', 'Users will see the updated version.');
-                if(!result.isConfirmed) {
-                    btn.innerText = originalText;
-                    return;
-                }
+                if(!result.isConfirmed) { btn.innerText = originalText; return; }
                 promise = db.ref('system_notifications/' + id).update(payload);
             } else {
                 promise = db.ref('system_notifications').push(payload);
             }
-
-            promise.then(() => {
-                showToast(id ? 'Updated successfully!' : 'Notification sent!', 'success');
-                resetNotifForm();
-            }).catch(err => {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Sending Failed',
-                    text: err.message,
-                    background: '#1a1a1a',
-                    color: '#fff'
-                });
-            }).finally(() => {
-                 btn.innerText = originalText;
-            });
+            promise.then(() => { showToast(id ? 'Updated successfully!' : 'Notification sent!', 'success'); resetNotifForm(); }).catch(err => { Swal.fire({ icon: 'error', title: 'Sending Failed', text: err.message, background: '#1a1a1a', color: '#fff' }); }).finally(() => { btn.innerText = originalText; });
         }
         
         function renderAdminNotifications() {
